@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>2D Pattern Matcher</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
+  header { background: #1a1d2e; padding: 18px 28px; border-bottom: 1px solid #2e3250; display: flex; align-items: center; gap: 14px; }
+  header h1 { font-size: 20px; font-weight: 700; color: #a78bfa; }
+  header p  { font-size: 13px; color: #888; }
+
+  .layout { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 61px); }
+
+  /* Sidebar */
+  aside { background: #13151f; border-right: 1px solid #2e3250; padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: #1a1d2e; border: 1px solid #2e3250; border-radius: 10px; padding: 14px; }
+  .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #7c85c0; margin-bottom: 10px; }
+  label { font-size: 12px; color: #aaa; display: block; margin-bottom: 4px; margin-top: 8px; }
+  input[type=number], select, textarea {
+    width: 100%; background: #0f1117; border: 1px solid #2e3250; border-radius: 6px;
+    color: #e0e0e0; padding: 6px 8px; font-size: 13px; font-family: monospace;
+  }
+  textarea { resize: vertical; line-height: 1.6; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .algo-btn {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid #2e3250; background: #0f1117; color: #ccc; cursor: pointer; font-size: 13px;
+    transition: all 0.2s; width: 100%; margin-bottom: 6px; text-align: left;
+  }
+  .algo-btn.active { border-color: #a78bfa; background: rgba(167,139,250,0.12); color: #a78bfa; }
+  .algo-btn .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .run-btn {
+    width: 100%; padding: 10px; border-radius: 8px; border: none;
+    background: linear-gradient(135deg, #7c3aed, #a78bfa); color: #fff;
+    font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.2s;
+  }
+  .run-btn:hover { opacity: 0.85; }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { background: #0f1117; border-radius: 8px; padding: 10px; text-align: center; }
+  .stat .val { font-size: 22px; font-weight: 700; color: #a78bfa; }
+  .stat .lbl { font-size: 11px; color: #666; margin-top: 2px; }
+
+  /* Main */
+  main { display: flex; flex-direction: column; overflow: hidden; }
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid #2e3250; background: #13151f; }
+  .tab { padding: 12px 20px; font-size: 13px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .tab.active { color: #a78bfa; border-color: #a78bfa; }
+  .panel { flex: 1; overflow: auto; padding: 20px; display: none; }
+  .panel.active { display: flex; flex-direction: column; gap: 16px; }
+
+  /* Grid */
+  .grid-wrap { overflow: auto; }
+  .matrix-label { font-size: 12px; color: #7c85c0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  table.matrix { border-collapse: collapse; font-family: monospace; font-size: 13px; }
+  table.matrix td {
+    width: 28px; height: 28px; text-align: center; border: 1px solid #2e3250;
+    transition: background 0.15s, color 0.15s; cursor: default; border-radius: 2px;
+    font-weight: 500;
+  }
+  td.cell-match    { background: #22c55e !important; color: #000 !important; }
+  td.cell-scan     { background: rgba(167,139,250,0.3) !important; }
+  td.cell-pattern  { background: #3b82f6; color: #fff; }
+  td.cell-mismatch { background: #ef4444 !important; color: #fff !important; }
+
+  /* Algo explanation */
+  .algo-info { background: #1a1d2e; border: 1px solid #2e3250; border-radius: 10px; padding: 16px; }
+  .algo-info h4 { color: #a78bfa; margin-bottom: 8px; }
+  .algo-info p  { font-size: 13px; color: #aaa; line-height: 1.6; }
+  .algo-info code { background: #0f1117; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: #7dd3fc; }
+  .complexity { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .cpx-tag { background: #0f1117; border: 1px solid #2e3250; border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+  .cpx-tag span { color: #a78bfa; font-weight: 700; }
+
+  /* Step animation */
+  .anim-bar { display: flex; align-items: center; gap: 10px; background: #1a1d2e; border: 1px solid #2e3250; border-radius: 10px; padding: 12px 16px; }
+  .anim-bar button { background: #0f1117; border: 1px solid #2e3250; border-radius: 6px; color: #ccc; padding: 5px 12px; cursor: pointer; font-size: 12px; }
+  .anim-bar button:hover { border-color: #a78bfa; color: #a78bfa; }
+  #stepInfo { font-size: 12px; color: #888; flex: 1; }
+  #stepCount { font-size: 12px; color: #666; }
+
+  /* Comparison tab */
+  .cmp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .cmp-card { background: #1a1d2e; border: 1px solid #2e3250; border-radius: 10px; padding: 16px; }
+  .cmp-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .bar-wrap { margin: 6px 0; }
+  .bar-label { font-size: 11px; color: #888; margin-bottom: 3px; }
+  .bar { height: 14px; border-radius: 3px; transition: width 0.6s; }
+
+  .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+  .msg.found { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+  .msg.notfound { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+  .msg.info { background: rgba(167,139,250,0.1); border: 1px solid rgba(167,139,250,0.2); color: #c4b5fd; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⬛ 2D Pattern Matcher</h1>
+    <p>Naive · Rabin-Karp · KMP-2D — visualized step by step</p>
+  </div>
+</header>
+<div class="layout">
+<aside>
+  <div class="card">
+    <h3>🔢 Matrix (Text)</h3>
+    <label>Large matrix (space-separated rows)</label>
+    <textarea id="matrixInput" rows="7">3 1 4 1 5 9 2 6 5 3
+5 3 5 8 9 7 9 3 2 3
+8 4 5 3 2 3 8 4 6 2
+2 6 4 3 3 8 3 2 7 9
+1 7 8 3 2 3 9 5 2 5
+4 1 4 3 8 9 2 8 1 4
+1 6 1 3 2 3 4 3 3 8</textarea>
+    <label>Sub-pattern to find</label>
+    <textarea id="patternInput" rows="3">3 2 3
+3 8 9
+3 2 3</textarea>
+    <label>Mode</label>
+    <select id="modeSelect">
+      <option value="int">Integer matrix</option>
+      <option value="bw">Black & White (0/1)</option>
+    </select>
+  </div>
+
+  <div class="card">
+    <h3>⚙️ Algorithm</h3>
+    <button class="algo-btn active" data-algo="naive" onclick="selectAlgo(this)">
+      <span class="dot" style="background:#f59e0b"></span> Naive Brute Force
+    </button>
+    <button class="algo-btn" data-algo="rk" onclick="selectAlgo(this)">
+      <span class="dot" style="background:#3b82f6"></span> Rabin-Karp 2D
+    </button>
+    <button class="algo-btn" data-algo="kmp" onclick="selectAlgo(this)">
+      <span class="dot" style="background:#22c55e"></span> KMP-Inspired 2D
+    </button>
+  </div>
+
+  <div class="card">
+    <h3>🎮 Presets</h3>
+    <label>Quick examples</label>
+    <select id="presetSelect" onchange="loadPreset(this.value)">
+      <option value="">— choose —</option>
+      <option value="simple">Simple 5×5 matrix</option>
+      <option value="bw">B&W bitmap (8×8)</option>
+      <option value="large">Large random 12×12</option>
+      <option value="notfound">Pattern not found</option>
+    </select>
+  </div>
+
+  <div class="card" id="statsCard" style="display:none">
+    <h3>📊 Results</h3>
+    <div class="stats-grid">
+      <div class="stat"><div class="val" id="sMatches">-</div><div class="lbl">Matches</div></div>
+      <div class="stat"><div class="val" id="sComps">-</div><div class="lbl">Comparisons</div></div>
+      <div class="stat"><div class="val" id="sTime">-</div><div class="lbl">Time (ms)</div></div>
+      <div class="stat"><div class="val" id="sSteps">-</div><div class="lbl">Steps</div></div>
+    </div>
+  </div>
+
+  <button class="run-btn" onclick="runAll()">▶ Run & Visualize</button>
+</aside>
+
+<main>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('visual',this)">🔍 Visualizer</div>
+    <div class="tab" onclick="switchTab('compare',this)">📊 Compare All</div>
+    <div class="tab" onclick="switchTab('explain',this)">📖 How It Works</div>
+  </div>
+
+  <!-- VISUAL TAB -->
+  <div class="panel active" id="panel-visual">
+    <div class="anim-bar">
+      <button onclick="animStep(-10)">«</button>
+      <button onclick="animStep(-1)">‹ Prev</button>
+      <button onclick="playPause()" id="playBtn">▶ Play</button>
+      <button onclick="animStep(1)">Next ›</button>
+      <button onclick="animStep(10)">»</button>
+      <div id="stepInfo">Run an algorithm to begin animation</div>
+      <div id="stepCount"></div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 1fr auto; gap: 20px; align-items: start;">
+      <div>
+        <div class="matrix-label">Large Matrix (haystack)</div>
+        <div class="grid-wrap"><table class="matrix" id="mainGrid"></table></div>
+      </div>
+      <div>
+        <div class="matrix-label">Pattern (needle)</div>
+        <div class="grid-wrap"><table class="matrix" id="patGrid"></table></div>
+        <div id="resultMsg" style="margin-top:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPARE TAB -->
+  <div class="panel" id="panel-compare">
+    <div class="msg info">Click "Run & Visualize" first, then switch here to see the comparison.</div>
+    <div class="cmp-grid" id="cmpGrid"></div>
+  </div>
+
+  <!-- EXPLAIN TAB -->
+  <div class="panel" id="panel-explain">
+    <div class="algo-info">
+      <h4>🔶 1. Naive Brute Force</h4>
+      <p>Slide the pattern over every valid position <code>(i, j)</code> in the text. At each position, compare all <code>P×Q</code> cells. If any mismatch, move on.</p>
+      <div class="complexity">
+        <div class="cpx-tag">Time: <span>O(N·M·P·Q)</span></div>
+        <div class="cpx-tag">Space: <span>O(1)</span></div>
+        <div class="cpx-tag">1D origin: <span>Naive string search</span></div>
+      </div>
+    </div>
+    <div class="algo-info">
+      <h4>🔷 2. Rabin-Karp 2D (Rolling Hash)</h4>
+      <p>Based on Rabin-Karp 1D string search. Hash each row of the text using a rolling polynomial hash. Then build a "hash matrix" of row-hashes, and apply a second rolling hash down each column — matching the hash of the pattern's column-of-row-hashes. Only verify cell-by-cell on hash collision.</p>
+      <div class="complexity">
+        <div class="cpx-tag">Time: <span>O(N·M)</span> avg</div>
+        <div class="cpx-tag">Space: <span>O(N·M)</span></div>
+        <div class="cpx-tag">1D origin: <span>Rabin-Karp</span></div>
+      </div>
+    </div>
+    <div class="algo-info">
+      <h4>🟢 3. KMP-Inspired 2D</h4>
+      <p>Extends KMP's failure function idea to 2D. Run KMP on each row of the text against the corresponding pattern row, producing a "match column" vector. Then run KMP again down that column vector to find vertical matches of the row-match pattern.</p>
+      <div class="complexity">
+        <div class="cpx-tag">Time: <span>O(N·M + P·Q)</span></div>
+        <div class="cpx-tag">Space: <span>O(N·M)</span></div>
+        <div class="cpx-tag">1D origin: <span>Knuth-Morris-Pratt</span></div>
+      </div>
+    </div>
+    <div class="algo-info" style="border-color: #2e3250">
+      <h4>📐 From 1D to 2D — The Big Idea</h4>
+      <p>All three algorithms extend from 1D by applying the 1D search <strong>twice</strong>: once horizontally across rows, and once vertically across the resulting column of row-match signals. This "two-pass" trick is the key insight that makes efficient 2D pattern matching possible.</p>
+    </div>
+  </div>
+</main>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let currentAlgo = 'naive';
+let steps = [];  // animation steps
+let stepIdx = 0;
+let playInterval = null;
+let matrix = [], pattern = [];
+let allResults = {};
+
+// ─── Algo selection ───────────────────────────────────────────────────────────
+function selectAlgo(btn) {
+  document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentAlgo = btn.dataset.algo;
+}
+
+// ─── Parse input ──────────────────────────────────────────────────────────────
+function parseMatrix(str) {
+  return str.trim().split('\n').map(r => r.trim().split(/\s+/).map(Number));
+}
+
+function readInputs() {
+  matrix  = parseMatrix(document.getElementById('matrixInput').value);
+  pattern = parseMatrix(document.getElementById('patternInput').value);
+}
+
+// ─── Presets ──────────────────────────────────────────────────────────────────
+const PRESETS = {
+  simple: {
+    m: `1 2 3 4 5\n6 7 8 2 3\n9 1 2 7 8\n3 2 3 1 2\n5 7 8 4 5`,
+    p: `2 3\n7 8`
+  },
+  bw: {
+    m: `0 0 1 1 0 0 0 0\n0 1 1 1 1 0 0 0\n1 1 0 0 1 1 0 0\n1 1 0 0 1 1 0 0\n0 1 1 1 1 0 0 0\n0 0 1 1 0 0 1 1\n0 0 0 0 0 1 1 1\n0 0 0 0 0 0 1 1`,
+    p: `1 1\n1 1`
+  },
+  large: { m: null, p: null },  // generated
+  notfound: {
+    m: `1 2 3 4\n5 6 7 8\n9 1 2 3\n4 5 6 7`,
+    p: `9 9\n9 9`
+  }
+};
+
+function loadPreset(name) {
+  if (!name) return;
+  if (name === 'large') {
+    // generate random 12x12
+    let rows = [];
+    for (let i=0;i<12;i++) rows.push(Array.from({length:12},()=>Math.floor(Math.random()*9)+1).join(' '));
+    // plant pattern
+    const p = [[2,5],[5,2]];
+    rows[4] = rows[4].split(' '); rows[4][3] = 2; rows[4][4] = 5; rows[4] = rows[4].join(' ');
+    rows[5] = rows[5].split(' '); rows[5][3] = 5; rows[5][4] = 2; rows[5] = rows[5].join(' ');
+    document.getElementById('matrixInput').value = rows.join('\n');
+    document.getElementById('patternInput').value = '2 5\n5 2';
+  } else if (PRESETS[name]) {
+    document.getElementById('matrixInput').value = PRESETS[name].m;
+    document.getElementById('patternInput').value = PRESETS[name].p;
+  }
+}
+
+// ─── ALGORITHMS ───────────────────────────────────────────────────────────────
+
+// NAIVE
+function naiveSearch(M, P) {
+  const NR=M.length, NC=M[0].length, PR=P.length, PC=P[0].length;
+  const steps=[], matches=[];
+  let comps=0;
+  for (let i=0;i<=NR-PR;i++) {
+    for (let j=0;j<=NC-PC;j++) {
+      let ok=true, cells=[];
+      outer: for (let pi=0;pi<PR;pi++) {
+        for (let pj=0;pj<PC;pj++) {
+          comps++;
+          const match = M[i+pi][j+pj]===P[pi][pj];
+          cells.push({r:i+pi, c:j+pj, match});
+          if (!match) { ok=false; break outer; }
+        }
+      }
+      steps.push({ type: ok?'match':'scan', pos:[i,j], cells, ok });
+      if (ok) matches.push([i,j]);
+    }
+  }
+  return { steps, matches, comps };
+}
+
+// RABIN-KARP 2D
+function rkSearch(M, P) {
+  const NR=M.length,NC=M[0].length,PR=P.length,PC=P[0].length;
+  const BASE1=31, BASE2=37, MOD=1e9+7;
+  const steps=[], matches=[];
+  let comps=0;
+
+  // Hash each row window of text
+  function rowHash(row, c, len) {
+    let h=0;
+    for (let k=0;k<len;k++) h=(h*BASE1 + row[c+k]+1) % MOD;
+    return h;
+  }
+  function rowHashP(row) {
+    let h=0;
+    for (let k=0;k<row.length;k++) h=(h*BASE1 + row[k]+1) % MOD;
+    return h;
+  }
+
+  // For each pattern row, compute hash
+  const patRowHashes = P.map(r => rowHashP(r));
+  // For each text row, compute sliding row hashes
+  const textRowHashes = M.map(row => {
+    const h=[];
+    let pw=1; for(let k=0;k<PC-1;k++) pw=(pw*BASE1)%MOD;
+    let cur=rowHash(row,0,PC); h.push(cur);
+    for(let c=1;c<=NC-PC;c++){
+      cur=(cur - (row[c-1]+1)*pw%MOD + MOD) % MOD;
+      cur=(cur*BASE1 + row[c+PC-1]+1) % MOD;
+      h.push(cur);
+    }
+    return h;
+  });
+
+  // Now vertical: for each column position j, slide PR-length window down
+  // matching the sequence of patRowHashes
+  function colHash(j, r, len) {
+    let h=0;
+    for(let k=0;k<len;k++) h=(h*BASE2 + textRowHashes[r+k][j]+1)%MOD;
+    return h;
+  }
+  const patColHash = patRowHashes.reduce((h,v)=>(h*BASE2+v+1)%MOD, 0);
+
+  let pw2=1; for(let k=0;k<PR-1;k++) pw2=(pw2*BASE2)%MOD;
+
+  for(let j=0;j<=NC-PC;j++){
+    let cur=colHash(j,0,PR);
+    for(let i=0;i<=NR-PR;i++){
+      if(i>0){
+        cur=(cur-(textRowHashes[i-1][j]+1)*pw2%MOD+MOD)%MOD;
+        cur=(cur*BASE2+textRowHashes[i+PR-1][j]+1)%MOD;
+      }
+      comps++;
+      const hashMatch = cur===patColHash;
+      if(hashMatch){
+        // verify
+        let ok=true, cells=[];
+        outer: for(let pi=0;pi<PR;pi++) for(let pj=0;pj<PC;pj++){
+          comps++;
+          const match=M[i+pi][j+pj]===P[pi][pj];
+          cells.push({r:i+pi,c:j+pj,match});
+          if(!match){ok=false;break outer;}
+        }
+        steps.push({type:ok?'match':'hashcollision',pos:[i,j],cells,ok,hashMatch:true});
+        if(ok) matches.push([i,j]);
+      } else {
+        steps.push({type:'hashskip',pos:[i,j],cells:[{r:i,c:j,match:false}],ok:false});
+      }
+    }
+  }
+  return {steps,matches,comps};
+}
+
+// KMP failure function
+function kmpFailure(pat) {
+  const f=new Array(pat.length).fill(0);
+  let k=0;
+  for(let i=1;i<pat.length;i++){
+    while(k>0 && pat[i]!==pat[k]) k=f[k-1];
+    if(pat[i]===pat[k]) k++;
+    f[i]=k;
+  }
+  return f;
+}
+
+// KMP search returning match end positions (indices where match ends)
+function kmpSearchPositions(text, pat) {
+  const f=kmpFailure(pat);
+  const matches=[];
+  let k=0;
+  for(let i=0;i<text.length;i++){
+    while(k>0 && text[i]!==pat[k]) k=f[k-1];
+    if(text[i]===pat[k]) k++;
+    if(k===pat.length){ matches.push(i-pat.length+1); k=f[k-1]; }
+  }
+  return matches;
+}
+
+// KMP 2D
+function kmpSearch(M, P) {
+  const NR=M.length,NC=M[0].length,PR=P.length,PC=P[0].length;
+  const steps=[],matches=[];
+  let comps=0;
+
+  // For each row i, find columns j where pattern row pi matches text row i at column j
+  // matchGrid[i][j] = true if row i of text matches ALL pattern rows stacked starting from row i
+  // Step 1: rowMatch[i][j] = which pattern row index matches text row i at col j
+  // We'll do: for each pattern row pi, KMP-search each text row for pattern row pi
+  const rowMatchAt = Array.from({length:NR}, ()=>new Array(NC).fill(-1));
+  for(let pi=0;pi<PR;pi++){
+    const pRow=P[pi];
+    for(let r=0;r<NR;r++){
+      comps += M[r].length;
+      const cols = kmpSearchPositions(M[r], pRow);
+      for(const c of cols){
+        // text row r has pattern row pi at col c
+        if(rowMatchAt[r][c]===-1 || rowMatchAt[r][c]===pi){
+          rowMatchAt[r][c]=pi;
+        }
+      }
+    }
+  }
+
+  // Step 2: For each col j, build binary sequence: matchCol[r] = 1 if rowMatchAt[r][j] is "useful"
+  // We want to find: for each col j, positions i where rows i..i+PR-1 each match their respective pattern row
+  // Encode: indicator[r][j] = rowMatchAt[r][j]===r%PR ? 1 : 0 — wait, not quite.
+  // Proper: indicator[r][j] = (rowMatchAt[r][j] === (r % PR)) — no.
+  // Actually: We need rows i,i+1,...,i+PR-1 to match pattern rows 0,1,...,PR-1
+  // So indicator: matchIndicator[r][j] = (rowMatchAt[r][j]===0)|(rowMatchAt[r][j]===1)|...
+  // Simpler: for each j, check column vector matchAt[r][j] against pattern [0,1,...,PR-1]
+  // using 1D KMP on the indicator sequence.
+
+  for(let j=0;j<=NC-PC;j++){
+    const colSeq = [];
+    for(let r=0;r<NR;r++) colSeq.push(rowMatchAt[r][j]);
+    const patSeq = Array.from({length:PR},(_,k)=>k);
+    // KMP: find where patSeq appears in colSeq using custom equality
+    const f=new Array(PR).fill(0);
+    let k2=0;
+    for(let qi=1;qi<PR;qi++){
+      while(k2>0 && patSeq[qi]!==patSeq[k2]) k2=f[k2-1];
+      if(patSeq[qi]===patSeq[k2]) k2++;
+      f[qi]=k2;
+    }
+    let k=0;
+    for(let r=0;r<NR;r++){
+      comps++;
+      while(k>0 && colSeq[r]!==patSeq[k]) k=f[k-1];
+      if(colSeq[r]===patSeq[k]) k++;
+      if(k===PR){
+        const i=r-PR+1;
+        // verify
+        let ok=true, cells=[];
+        outer2: for(let pi=0;pi<PR;pi++) for(let pj=0;pj<PC;pj++){
+          const match=M[i+pi][j+pj]===P[pi][pj];
+          cells.push({r:i+pi,c:j+pj,match});
+          if(!match){ok=false;break outer2;}
+        }
+        steps.push({type:ok?'match':'scan',pos:[i,j],cells,ok});
+        if(ok) matches.push([i,j]);
+        k=f[k-1];
+      } else {
+        if(r<NR-PR){
+          steps.push({type:'scan',pos:[Math.max(0,r-k),j],cells:[{r,c:j,match:colSeq[r]===patSeq[Math.max(0,k-1)]}],ok:false});
+        }
+      }
+    }
+  }
+  return {steps,matches,comps};
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+function buildGrid(tableId, data, highlights={}) {
+  const tbl=document.getElementById(tableId);
+  tbl.innerHTML='';
+  data.forEach((row,ri)=>{
+    const tr=document.createElement('tr');
+    row.forEach((val,ci)=>{
+      const td=document.createElement('td');
+      td.id=`${tableId}_${ri}_${ci}`;
+      td.textContent=val;
+      const key=`${ri},${ci}`;
+      if(highlights[key]) td.className=highlights[key];
+      tr.appendChild(td);
+    });
+    tbl.appendChild(tr);
+  });
+}
+
+function highlightStep(s) {
+  // Reset
+  document.querySelectorAll('#mainGrid td').forEach(td=>{td.className='';});
+  if(!s) return;
+
+  // Color matched cells
+  s.cells.forEach(({r,c,match})=>{
+    const td=document.getElementById(`mainGrid_${r}_${c}`);
+    if(td) td.className = s.ok ? 'cell-match' : (match?'cell-scan':'cell-mismatch');
+  });
+
+  // Info
+  const msgs = {
+    match: `✅ Match found at (${s.pos[0]}, ${s.pos[1]})`,
+    scan: `🔍 Scanning position (${s.pos[0]}, ${s.pos[1]})`,
+    hashskip: `⚡ Hash mismatch — skipping (${s.pos[0]}, ${s.pos[1]})`,
+    hashcollision: `⚠️ Hash collision at (${s.pos[0]}, ${s.pos[1]}) — verifying...`
+  };
+  document.getElementById('stepInfo').textContent = msgs[s.type]||'';
+  document.getElementById('stepCount').textContent = `Step ${stepIdx+1} / ${steps.length}`;
+}
+
+function renderPatternGrid() {
+  const hi={};
+  pattern.forEach((row,ri)=>row.forEach((_,ci)=>{ hi[`${ri},${ci}`]='cell-pattern'; }));
+  buildGrid('patGrid', pattern, hi);
+}
+
+// ─── Animation ────────────────────────────────────────────────────────────────
+function animStep(delta) {
+  if(!steps.length) return;
+  stepIdx = Math.max(0, Math.min(steps.length-1, stepIdx+delta));
+  highlightStep(steps[stepIdx]);
+}
+
+let playSpeed = 180;
+function playPause() {
+  const btn=document.getElementById('playBtn');
+  if(playInterval){
+    clearInterval(playInterval); playInterval=null;
+    btn.textContent='▶ Play';
+  } else {
+    btn.textContent='⏸ Pause';
+    playInterval=setInterval(()=>{
+      if(stepIdx>=steps.length-1){ clearInterval(playInterval); playInterval=null; btn.textContent='▶ Play'; return; }
+      animStep(1);
+    }, playSpeed);
+  }
+}
+
+// ─── Run ──────────────────────────────────────────────────────────────────────
+function runAll() {
+  readInputs();
+  if(!matrix.length||!pattern.length){alert('Invalid input');return;}
+  const NR=matrix.length,NC=matrix[0].length,PR=pattern.length,PC=pattern[0].length;
+  if(PR>NR||PC>NC){alert('Pattern larger than matrix!');return;}
+
+  // Stop animation
+  if(playInterval){clearInterval(playInterval);playInterval=null;document.getElementById('playBtn').textContent='▶ Play';}
+
+  // Run selected algo
+  allResults={};
+  const algos={naive:naiveSearch,rk:rkSearch,kmp:kmpSearch};
+  const names={naive:'Naive',rk:'Rabin-Karp',kmp:'KMP-2D'};
+
+  for(const [key,fn] of Object.entries(algos)){
+    const t0=performance.now();
+    allResults[key]={...fn(matrix,pattern), time:(performance.now()-t0).toFixed(2), name:names[key]};
+  }
+
+  const res=allResults[currentAlgo];
+  steps=res.steps;
+  stepIdx=0;
+
+  // Build grids
+  buildGrid('mainGrid',matrix);
+  renderPatternGrid();
+  highlightStep(steps[0]);
+
+  // Stats
+  document.getElementById('statsCard').style.display='';
+  document.getElementById('sMatches').textContent=res.matches.length;
+  document.getElementById('sComps').textContent=res.comps;
+  document.getElementById('sTime').textContent=res.time;
+  document.getElementById('sSteps').textContent=res.steps.length;
+
+  // Result msg
+  const msgEl=document.getElementById('resultMsg');
+  if(res.matches.length){
+    msgEl.innerHTML=`<div class="msg found">✅ Found ${res.matches.length} match(es) at: ${res.matches.map(([r,c])=>`(${r},${c})`).join(', ')}</div>`;
+  } else {
+    msgEl.innerHTML=`<div class="msg notfound">❌ Pattern not found in matrix</div>`;
+  }
+
+  // Highlight final matches on grid
+  res.matches.forEach(([r,c])=>{
+    pattern.forEach((row,pi)=>row.forEach((_,pj)=>{
+      const td=document.getElementById(`mainGrid_${r+pi}_${c+pj}`);
+      if(td) td.className='cell-match';
+    }));
+  });
+
+  // Render compare tab
+  renderCompare();
+}
+
+function renderCompare() {
+  const grid=document.getElementById('cmpGrid');
+  grid.innerHTML='';
+  const maxComps=Math.max(...Object.values(allResults).map(r=>r.comps));
+  const maxTime=Math.max(...Object.values(allResults).map(r=>+r.time))||1;
+  const colors={naive:'#f59e0b',rk:'#3b82f6',kmp:'#22c55e'};
+  for(const [key,res] of Object.entries(allResults)){
+    const pct=c=>Math.max(4,Math.round(c/maxComps*100));
+    const pctT=t=>Math.max(4,Math.round(+t/maxTime*100));
+    grid.innerHTML+=`
+    <div class="cmp-card">
+      <h4 style="color:${colors[key]}">${res.name}</h4>
+      <div class="bar-wrap"><div class="bar-label">Comparisons: ${res.comps}</div>
+        <div class="bar" style="width:${pct(res.comps)}%; background:${colors[key]}; opacity:0.8"></div></div>
+      <div class="bar-wrap" style="margin-top:8px"><div class="bar-label">Time: ${res.time}ms</div>
+        <div class="bar" style="width:${pctT(res.time)}%; background:${colors[key]}; opacity:0.6"></div></div>
+      <div style="margin-top:10px;font-size:12px;color:#888">Matches: <span style="color:${colors[key]};font-weight:700">${res.matches.length}</span></div>
+      <div style="font-size:12px;color:#888">Steps animated: <span style="color:#ccc">${res.steps.length}</span></div>
+    </div>`;
+  }
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+// Initial render
+buildGrid('mainGrid', parseMatrix(document.getElementById('matrixInput').value));
+buildGrid('patGrid', parseMatrix(document.getElementById('patternInput').value), 
+  Object.fromEntries(parseMatrix(document.getElementById('patternInput').value)
+    .flatMap((r,ri)=>r.map((_,ci)=>[`${ri},${ci}`,'cell-pattern']))));
+</script>
+</body>
+</html>
