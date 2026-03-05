@@ -443,13 +443,13 @@ class PatternMatcherApp:
 
         pat_rows = [tuple(row) for row in P]
         unique_rows = list(set(pat_rows))
-        lps_map = {r: self._kmp_build_lps(list(r)) for r in unique_rows}
+        lps_map = {r: self._kmp_build_lps(list(r))[0] for r in unique_rows}
 
         row_hits = [defaultdict(set) for _ in range(NR)]
         for i in range(NR):
             text_row = M[i]
             for r in unique_rows:
-                cols = self._kmp_search(text_row, list(r), lps_map[r])
+                cols, _ = self._kmp_search_row(text_row, list(r), lps_map[r])
                 for c0 in cols:
                     if c0 <= NC - PC:
                         row_hits[i][r].add(c0)
@@ -501,14 +501,14 @@ class PatternMatcherApp:
             tok_seq.append(row_to_tok[key])
 
         unique_rows = list(row_to_tok.keys())
-        lps_map = {r: self._kmp_build_lps(list(r)) for r in unique_rows}
+        lps_map = {r: self._kmp_build_lps(list(r))[0] for r in unique_rows}
 
         token_marks = [defaultdict(int) for _ in range(NR)]  # token_marks[i][j] = token
         for i in range(NR):
             text_row = M[i]
             for r in unique_rows:
                 tok = row_to_tok[r]
-                cols = self._kmp_search(text_row, list(r), lps_map[r])
+                cols, _ = self._kmp_search_row(text_row, list(r), lps_map[r])
                 for j in cols:
                     if j <= NC - PC:
                         token_marks[i][j] = tok

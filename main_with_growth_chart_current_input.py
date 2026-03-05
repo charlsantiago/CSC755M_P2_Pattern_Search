@@ -3,6 +3,14 @@ from tkinter import ttk, messagebox, filedialog
 import random
 import time
 from collections import deque, defaultdict
+import math
+from statistics import mean
+try:
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+except Exception as _e:
+    Figure = None
+    FigureCanvasTkAgg = None
 
 # --- Aho-Corasick over integer tokens (Bird-Baker vertical phase) ---
 class _ACNode:
@@ -63,7 +71,15 @@ class PatternMatcherApp:
         self.pattern_input.pack(fill="x", pady=(5, 10))
 
         self.algo_var = tk.StringVar(value="naive")
-        for text, val in [("Naive", "naive"), ("Rabin-Karp (2D Rolling Hash)", "rk"), ("KMP (Row-Filter+Verify)", "kmp"), ("Boyer-Moore (Row-Filter+Verify)", "bm"), ("Aho-Corasick (Row-AC+Align)", "aho"), ("Bird-Baker (KMP horiz + AC vert)", "bb"), ("KMP horiz + Naive vert", "kmp_nv")]:
+        for text, val in [
+            ("Naive", "naive"),
+            ("Rabin-Karp (2D Rolling Hash)", "rk"),
+            ("KMP (Row-Filter+Verify)", "kmp"),
+            ("Boyer-Moore (Row-Filter+Verify)", "bm"),
+            ("Aho-Corasick (Row-AC+Align)", "aho"),
+            ("Bird-Baker (KMP horiz + AC vert)", "bb"),
+            ("KMP horiz + Naive vert", "kmp_nv")
+        ]:
             tk.Radiobutton(self.sidebar, text=text, variable=self.algo_var, value=val, bg="#13151f", fg="#ccc", selectcolor="#7c3aed").pack(anchor="w")
 
         # Results Dashboard
@@ -76,6 +92,7 @@ class PatternMatcherApp:
 
         tk.Button(self.sidebar, text="▶ RUN SINGLE MODE", bg="#7c3aed", fg="white", font=("Segoe UI", 10, "bold"), command=self.run_single, relief="flat").pack(fill="x", pady=5)
         tk.Button(self.sidebar, text="🏁 START MULTI-RACE", bg="#22c55e", fg="white", font=("Segoe UI", 10, "bold"), command=self.run_multi_race, relief="flat").pack(fill="x")
+        tk.Button(self.sidebar, text="📈 GROWTH CHART", bg="#0ea5e9", fg="white", font=("Segoe UI", 10, "bold"), command=self.show_growth_chart, relief="flat").pack(fill="x", pady=(5,0))
 
         # --- RIGHT SIDEBAR ---
         self.log_sidebar = tk.Frame(self.root, bg="#13151f", width=280, padx=15, pady=15)
@@ -435,13 +452,13 @@ class PatternMatcherApp:
 
         pat_rows = [tuple(row) for row in P]
         unique_rows = list(set(pat_rows))
-        lps_map = {r: self._kmp_build_lps(list(r)) for r in unique_rows}
+        lps_map = {r: self._kmp_build_lps(list(r))[0] for r in unique_rows}
 
         row_hits = [defaultdict(set) for _ in range(NR)]
         for i in range(NR):
             text_row = M[i]
             for r in unique_rows:
-                cols = self._kmp_search(text_row, list(r), lps_map[r])
+                cols, _ = self._kmp_search_row(text_row, list(r), lps_map[r])
                 for c0 in cols:
                     if c0 <= NC - PC:
                         row_hits[i][r].add(c0)
@@ -472,6 +489,67 @@ class PatternMatcherApp:
                 if ok:
                     matches += 1
 
+                steps.append({'pos': (i, j), 'ok': ok, 'cells': cells, 'm': matches, 'c': comps})
+
+        return steps
+
+    def engine_bb(self, M, P):
+        """Bird-Baker: KMP horizontal + Aho-Corasick vertical (token alignment + verify)."""
+        NR, NC, PR, PC = len(M), len(M[0]), len(P), len(P[0])
+        steps, comps, matches = [], 0, 0
+
+        # Tokenize pattern rows by content (identical rows share token)
+        row_to_tok = {}
+        tok_seq = []
+        next_tok = 1
+        for row in P:
+            key = tuple(row)
+            if key not in row_to_tok:
+                row_to_tok[key] = next_tok
+                next_tok += 1
+            tok_seq.append(row_to_tok[key])
+
+        unique_rows = list(row_to_tok.keys())
+        lps_map = {r: self._kmp_build_lps(list(r))[0] for r in unique_rows}
+
+        token_marks = [defaultdict(int) for _ in range(NR)]  # token_marks[i][j] = token
+        for i in range(NR):
+            text_row = M[i]
+            for r in unique_rows:
+                tok = row_to_tok[r]
+                cols, _ = self._kmp_search_row(text_row, list(r), lps_map[r])
+                for j in cols:
+                    if j <= NC - PC:
+                        token_marks[i][j] = tok
+
+        ac_nodes = self._ac_build([tok_seq])
+        candidates = set()
+        for j in range(NC - PC + 1):
+            stream = [token_marks[i].get(j, 0) for i in range(NR)]
+            for end_i, _pid in self._ac_search_stream(ac_nodes, stream):
+                start_i = end_i - PR + 1
+                if 0 <= start_i <= NR - PR:
+                    candidates.add((start_i, j))
+
+        for i in range(NR - PR + 1):
+            for j in range(NC - PC + 1):
+                comps += 1
+                ok = (i, j) in candidates
+                cells = [(i, j, ok)]
+                if ok:
+                    cells = []
+                    for pi in range(PR):
+                        for pj in range(PC):
+                            comps += 1
+                            match_cell = (M[i + pi][j + pj] == P[pi][pj])
+                            cells.append((i + pi, j + pj, match_cell))
+                            if not match_cell:
+                                ok = False
+                                break
+                        if not ok:
+                            break
+                if ok:
+                    matches += 1
                 steps.append({'pos': (i, j), 'ok': ok, 'cells': cells, 'm': matches, 'c': comps})
 
         return steps
@@ -513,69 +591,146 @@ class PatternMatcherApp:
                 for pid in nodes[s].out:
                     yield i, pid
 
-# --- Aho-Corasick over integer tokens (Bird-Baker vertical phase) ---
 
-    def engine_bb(self, M, P):
-        """Bird-Baker: KMP horizontal + Aho-Corasick vertical (token alignment + verify)."""
-        NR, NC, PR, PC = len(M), len(M[0]), len(P), len(P[0])
-        steps, comps, matches = [], 0, 0
+    # --- GROWTH CHART (Comparisons & Time vs Matrix Size) ---
+    def _make_random_instance(self, n, m, pr, pc, value_min=0, value_max=9, force_embed=True):
+        """Create random matrix n×m and pattern pr×pc. Optionally embed the pattern to guarantee at least one match."""
+        M = [[random.randint(value_min, value_max) for _ in range(m)] for __ in range(n)]
+        P = [[random.randint(value_min, value_max) for _ in range(pc)] for __ in range(pr)]
+        if force_embed and pr <= n and pc <= m:
+            top_i = random.randint(0, n - pr)
+            top_j = random.randint(0, m - pc)
+            for i in range(pr):
+                for j in range(pc):
+                    M[top_i + i][top_j + j] = P[i][j]
+        return M, P
 
-        # Tokenize pattern rows by content (identical rows share token)
-        row_to_tok = {}
-        tok_seq = []
-        next_tok = 1
-        for row in P:
-            key = tuple(row)
-            if key not in row_to_tok:
-                row_to_tok[key] = next_tok
-                next_tok += 1
-            tok_seq.append(row_to_tok[key])
+    def _engine_summary(self, engine_func, M, P):
+        """Run an engine and return (comparisons, matches, elapsed_ms)."""
+        t0 = time.perf_counter()
+        steps = engine_func(M, P)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        if not steps:
+            return 0, 0, elapsed_ms
+        last = steps[-1]
+        return int(last.get('c', 0)), int(last.get('m', 0)), elapsed_ms
 
-        unique_rows = list(row_to_tok.keys())
-        lps_map = {r: self._kmp_build_lps(list(r)) for r in unique_rows}
+    def show_growth_chart(self):
+        """Benchmark algorithms across increasing matrix sizes and plot comparisons + runtime."""
+        if Figure is None or FigureCanvasTkAgg is None:
+            messagebox.showerror("Error", "Matplotlib is not installed. Please install it with:\npip install matplotlib")
+            return
+        # Use current pattern size if available; otherwise default to 2x2
+        if not self.prepare_run():
+            return
+        pr = len(self.pattern) if self.pattern else 2
+        pc = len(self.pattern[0]) if self.pattern and self.pattern[0] else 2
 
-        token_marks = [defaultdict(int) for _ in range(NR)]  # token_marks[i][j] = token
-        for i in range(NR):
-            text_row = M[i]
-            for r in unique_rows:
-                tok = row_to_tok[r]
-                cols = self._kmp_search(text_row, list(r), lps_map[r])
-                for j in cols:
-                    if j <= NC - PC:
-                        token_marks[i][j] = tok
+        # Use the CURRENT input matrix/pattern (cropping the matrix to different sizes)
+        # Pattern size
+        pr = len(self.pattern) if self.pattern else 2
+        pc = len(self.pattern[0]) if self.pattern and self.pattern[0] else 2
 
-        ac_nodes = self._ac_build([tok_seq])
-        candidates = set()
-        for j in range(NC - PC + 1):
-            stream = [token_marks[i].get(j, 0) for i in range(NR)]
-            for end_i, _pid in self._ac_search_stream(ac_nodes, stream):
-                start_i = end_i - PR + 1
-                if 0 <= start_i <= NR - PR:
-                    candidates.add((start_i, j))
+        NR = len(self.matrix)
+        NC = len(self.matrix[0]) if self.matrix else 0
+        maxN = min(NR, NC)
 
-        for i in range(NR - PR + 1):
-            for j in range(NC - PC + 1):
-                comps += 1
-                ok = (i, j) in candidates
-                cells = [(i, j, ok)]
-                if ok:
-                    cells = []
-                    for pi in range(PR):
-                        for pj in range(PC):
-                            comps += 1
-                            match_cell = (M[i + pi][j + pj] == P[pi][pj])
-                            cells.append((i + pi, j + pj, match_cell))
-                            if not match_cell:
-                                ok = False
-                                break
-                        if not ok:
-                            break
-                if ok:
-                    matches += 1
-                steps.append({'pos': (i, j), 'ok': ok, 'cells': cells, 'm': matches, 'c': comps})
+        if maxN < max(pr, pc):
+            messagebox.showerror(
+                "Matrix too small",
+                f"Your matrix is {NR}x{NC} but pattern is {pr}x{pc}. Increase the matrix size or reduce the pattern."
+            )
+            return
 
-        return steps
+        # Sizes to test (square crops from the current matrix)
+        # We start from the smallest size that can fit the pattern.
+        startN = max(pr, pc)
+        step = 2 if maxN - startN >= 6 else 1
+        sizes = list(range(startN, maxN + 1, step))
+        if len(sizes) > 12:
+            # keep charts readable
+            sizes = sizes[:12]
 
+        # Which algorithms to benchmark (same set as multi-race)
+        engines = [
+            ("Naive", self.engine_naive),
+            ("RK", self.engine_rk),
+            ("KMP", self.engine_kmp),
+            ("BM", self.engine_bm),
+            ("AHO", self.engine_aho),
+            ("BB", self.engine_bb),
+            ("KMP_NV", self.engine_kmp_nv),
+        ]
+
+        # Collect metrics
+        comps_series = {name: [] for name, _ in engines}
+        time_series  = {name: [] for name, _ in engines}
+        match_series = {name: [] for name, _ in engines}
+
+        # Deterministic (no random trials) since we are using your current input
+        trials = 1
+
+        for n in sizes:
+            # Crop the current matrix to n×n (top-left)
+            M_crop = [row[:n] for row in self.matrix[:n]]
+            P = self.pattern
+
+            for name, func in engines:
+                c, mm, t = self._engine_summary(func, M_crop, P)
+                comps_series[name].append(c)
+                time_series[name].append(t)
+                match_series[name].append(mm)
+
+        # Build window
+        win = tk.Toplevel(self.root)
+        win.title("Growth Chart: Comparisons & Execution Time (Current Input)")
+        win.geometry("1100x800")
+        win.configure(bg="#0f1117")
+
+        header = tk.Label(
+            win,
+            text="Growth Chart (current input): comparisons & runtime vs cropped matrix size",
+            bg="#0f1117", fg="#e0e0e0", font=("Segoe UI", 12, "bold")
+        )
+        header.pack(pady=(10, 5))
+
+        # Figure 1: Comparisons
+        fig1 = Figure(figsize=(10, 3.6), dpi=100)
+        ax1 = fig1.add_subplot(111)
+        for name, _ in engines:
+            ax1.plot(sizes, comps_series[name], marker="o", label=name)
+        ax1.set_title("Comparisons vs Cropped Matrix Size (N×N)")
+        ax1.set_xlabel("Cropped matrix size N")
+        ax1.set_ylabel("Comparisons")
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc="upper left", ncols=4, fontsize=8)
+
+        canvas1 = FigureCanvasTkAgg(fig1, master=win)
+        canvas1.draw()
+        canvas1.get_tk_widget().pack(fill="both", expand=False, padx=10, pady=(5, 10))
+
+        # Figure 2: Execution time
+        fig2 = Figure(figsize=(10, 3.6), dpi=100)
+        ax2 = fig2.add_subplot(111)
+        for name, _ in engines:
+            ax2.plot(sizes, time_series[name], marker="o", label=name)
+        ax2.set_title("Execution Time vs Cropped Matrix Size (N×N)")
+        ax2.set_xlabel("Cropped matrix size N")
+        ax2.set_ylabel("Time (ms)")
+        ax2.grid(True, alpha=0.3)
+        ax2.legend(loc="upper left", ncols=4, fontsize=8)
+
+        canvas2 = FigureCanvasTkAgg(fig2, master=win)
+        canvas2.draw()
+        canvas2.get_tk_widget().pack(fill="both", expand=False, padx=10, pady=(0, 10))
+
+        # Footer note
+        note = tk.Label(
+            win,
+            text=f"Pattern size used: {pr}×{pc}   |   Trials per size: {trials}   |   Values: random ints",
+            bg="#0f1117", fg="#9ca3af", font=("Segoe UI", 9)
+        )
+        note.pack(pady=(0, 10))
 
     def run_single(self):
         self.mode = "single"
@@ -597,15 +752,7 @@ class PatternMatcherApp:
         if not self.prepare_run(): return
         for w in self.display_container.winfo_children(): w.destroy()
         self.race_engines = {}
-        engines = [
-            ("Naive", self.engine_naive),
-            ("RK", self.engine_rk),
-            ("KMP", self.engine_kmp),
-            ("BM", self.engine_bm),
-            ("AHO", self.engine_aho),
-            ("BB", self.engine_bb),
-            ("KMP_NV", self.engine_kmp_nv)
-        ]
+        engines = [("Naive", self.engine_naive), ("RK", self.engine_rk), ("KMP", self.engine_kmp), ("BM", self.engine_bm), ("AHO", self.engine_aho), ("BB", self.engine_bb), ("KMP_NV", self.engine_kmp_nv)]
         for idx, (name, engine_func) in enumerate(engines):
             f = tk.Frame(self.display_container, bg="#1a1d2e", bd=1, relief="solid")
             f.grid(row=idx//3, column=idx%3, padx=5, pady=5)
