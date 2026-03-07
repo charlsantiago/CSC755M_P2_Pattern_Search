@@ -89,10 +89,55 @@ class PatternMatcherApp:
         tk.Button(self.sidebar, text="🏁 START MULTI-RACE", bg="#22c55e", fg="white", font=("Segoe UI", 10, "bold"), command=self.run_multi_race, relief="flat").pack(fill="x")
         tk.Button(self.sidebar, text="📈 GROWTH CHART", bg="#0ea5e9", fg="white", font=("Segoe UI", 10, "bold"), command=self.show_growth_chart, relief="flat").pack(fill="x", pady=(5, 0))
 
-        # --- RIGHT SIDEBAR ---
-        self.log_sidebar = tk.Frame(self.root, bg="#13151f", width=280, padx=15, pady=15)
-        self.log_sidebar.pack(side="right", fill="y")
-        self.log_sidebar.pack_propagate(False)
+        # --- CENTER + TRACELOG in a resizable PanedWindow ---
+        self.h_pane = ttk.PanedWindow(self.root, orient="horizontal")
+        self.h_pane.pack(side="left", expand=True, fill="both")
+
+        # --- CENTER ---
+        self.main_area = tk.Frame(self.h_pane, bg="#0f1117")
+        self.h_pane.add(self.main_area, weight=3)
+
+        self.ctrl_bar = tk.Frame(self.main_area, bg="#1a1d2e", padx=10, pady=10)
+        self.ctrl_bar.pack(fill="x")
+        self.play_btn = tk.Button(self.ctrl_bar, text="▶ Play", width=8, command=self.toggle_play, bg="#0f1117", fg="white")
+        self.play_btn.pack(side="left", padx=5)
+        self.status_lbl = tk.Label(self.ctrl_bar, text="System Ready", bg="#1a1d2e", fg="#a78bfa")
+        self.status_lbl.pack(side="left", padx=20)
+
+        # Scrollable visualization area
+        scroll_outer = tk.Frame(self.main_area, bg="#0f1117")
+        scroll_outer.pack(fill="both", expand=True)
+
+        v_scroll = tk.Scrollbar(scroll_outer, orient="vertical")
+        v_scroll.pack(side="right", fill="y")
+        h_scroll = tk.Scrollbar(scroll_outer, orient="horizontal")
+        h_scroll.pack(side="bottom", fill="x")
+
+        self._viz_canvas = tk.Canvas(
+            scroll_outer, bg="#0f1117",
+            yscrollcommand=v_scroll.set,
+            xscrollcommand=h_scroll.set,
+            highlightthickness=0,
+        )
+        self._viz_canvas.pack(side="left", fill="both", expand=True)
+        v_scroll.config(command=self._viz_canvas.yview)
+        h_scroll.config(command=self._viz_canvas.xview)
+
+        self.display_container = tk.Frame(self._viz_canvas, bg="#0f1117", padx=20, pady=20)
+        self._viz_win = self._viz_canvas.create_window((0, 0), window=self.display_container, anchor="nw")
+
+        self.display_container.bind("<Configure>", self._on_display_configure)
+        self._viz_canvas.bind("<Configure>", self._on_viz_canvas_configure)
+        # Mousewheel scrolling (bind on canvas and inner frame so it works wherever cursor is)
+        for widget in (self._viz_canvas, self.display_container):
+            widget.bind("<MouseWheel>", self._on_mousewheel)
+            widget.bind("<Button-4>", self._on_mousewheel)   # Linux scroll up
+            widget.bind("<Button-5>", self._on_mousewheel)   # Linux scroll down
+
+        # --- RIGHT SIDEBAR (tracelog) — draggable via PanedWindow sash ---
+        self.log_sidebar = tk.Frame(self.h_pane, bg="#13151f", padx=15, pady=15)
+        self.h_pane.add(self.log_sidebar, weight=1)
+
         self.match_log = tk.Listbox(self.log_sidebar, bg="#0f1117", fg="#22c55e", bd=0, font=("Consolas", 9), highlightthickness=0)
         self.match_log.pack(fill="both", expand=True)
 
@@ -101,18 +146,8 @@ class PatternMatcherApp:
         tk.Button(log_btns, text="Clear", bg="#333", fg="white", command=lambda: self.match_log.delete(0, tk.END)).pack(side="left", expand=True, fill="x", padx=2)
         tk.Button(log_btns, text="Export", bg="#333", fg="white", command=self.export_log).pack(side="left", expand=True, fill="x", padx=2)
 
-        # --- CENTER ---
-        self.main_area = tk.Frame(self.root, bg="#0f1117")
-        self.main_area.pack(side="left", expand=True, fill="both")
-        self.ctrl_bar = tk.Frame(self.main_area, bg="#1a1d2e", padx=10, pady=10)
-        self.ctrl_bar.pack(fill="x")
-        self.play_btn = tk.Button(self.ctrl_bar, text="▶ Play", width=8, command=self.toggle_play, bg="#0f1117", fg="white")
-        self.play_btn.pack(side="left", padx=5)
-        self.status_lbl = tk.Label(self.ctrl_bar, text="System Ready", bg="#1a1d2e", fg="#a78bfa")
-        self.status_lbl.pack(side="left", padx=20)
-
-        self.display_container = tk.Frame(self.main_area, bg="#0f1117", padx=20, pady=20)
-        self.display_container.pack(fill="both", expand=True)
+        # Set initial sash so tracelog starts at ~280 px wide
+        self.root.after(50, self._set_initial_sash)
 
     def create_stat_box(self, parent, label, r, c):
         f = tk.Frame(parent, bg="#0f1117", padx=5, pady=5, highlightthickness=1, highlightbackground="#2e3250")
@@ -121,6 +156,28 @@ class PatternMatcherApp:
         val_lbl.pack()
         tk.Label(f, text=label, bg="#0f1117", fg="#666", font=("Segoe UI", 7)).pack()
         return val_lbl
+
+    # --- SCROLL / SASH HELPERS ---
+
+    def _on_display_configure(self, event):
+        self._viz_canvas.configure(scrollregion=self._viz_canvas.bbox("all"))
+
+    def _on_viz_canvas_configure(self, event):
+        # Stretch the inner frame to fill the canvas width so grids aren't left-pinned
+        self._viz_canvas.itemconfig(self._viz_win, width=event.width)
+
+    def _on_mousewheel(self, event):
+        if event.num == 4:          # Linux scroll up
+            self._viz_canvas.yview_scroll(-1, "units")
+        elif event.num == 5:        # Linux scroll down
+            self._viz_canvas.yview_scroll(1, "units")
+        else:                       # Windows / macOS
+            self._viz_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _set_initial_sash(self):
+        total = self.h_pane.winfo_width()
+        if total > 400:
+            self.h_pane.sashpos(0, total - 280)
 
     # --- BENCHMARK HELPERS ---
 
@@ -153,66 +210,76 @@ class PatternMatcherApp:
             return
         if not self.prepare_run():
             return
-        pr = len(self.pattern) if self.pattern else 2
-        pc = len(self.pattern[0]) if self.pattern and self.pattern[0] else 2
 
-        NR = len(self.matrix)
-        NC = len(self.matrix[0]) if self.matrix else 0
-        maxN = min(NR, NC)
+        P = self.pattern
+        pr = len(P) if P else 2
+        pc = len(P[0]) if P and P[0] else 2
 
-        if maxN < max(pr, pc):
-            messagebox.showerror(
-                "Matrix too small",
-                f"Your matrix is {NR}x{NC} but pattern is {pr}x{pc}. Increase the matrix size or reduce the pattern."
-            )
+        # Fixed size range independent of the user's matrix.
+        # Each point uses a fresh independent random N×N matrix so curves
+        # reflect true algorithmic scaling, not a repeated top-left crop.
+        min_n = max(pr, pc) + 1          # smallest valid matrix for this pattern
+        all_sizes = [5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40]
+        sizes = [n for n in all_sizes if n >= min_n]
+        if not sizes:
+            messagebox.showerror("Pattern too large",
+                f"Pattern is {pr}×{pc}. Reduce it to use the growth chart.")
             return
 
-        startN = max(pr, pc)
-        step = 2 if maxN - startN >= 6 else 1
-        sizes = list(range(startN, maxN + 1, step))
-        if len(sizes) > 12:
-            sizes = sizes[:12]
+        # Derive the alphabet from the user's current matrix so random matrices
+        # use the same value range (keeps match density realistic).
+        flat = [v for row in self.matrix for v in row]
+        lo, hi = (min(flat), max(flat)) if flat else (1, 9)
+        if lo == hi:
+            lo, hi = lo, lo + 8   # avoid degenerate single-value alphabet
 
         engines = [
-            ("Naive",   engine_naive),
-            ("RK",      engine_rk),
-            ("KMP",     engine_kmp),
-            ("BM",      engine_bm),
-            ("AHO",     engine_aho),
-            ("BB",      engine_bb),
-            ("KMP_NV",  engine_kmp_nv),
+            ("Naive",  engine_naive),
+            ("RK",     engine_rk),
+            ("KMP",    engine_kmp),
+            ("BM",     engine_bm),
+            ("AHO",    engine_aho),
+            ("BB",     engine_bb),
+            ("KMP_NV", engine_kmp_nv),
         ]
 
         comps_series = {name: [] for name, _ in engines}
         time_series  = {name: [] for name, _ in engines}
 
+        rng = random.Random(42)   # fixed seed → reproducible chart
         for n in sizes:
-            M_crop = [row[:n] for row in self.matrix[:n]]
-            P = self.pattern
+            M_rand = [[rng.randint(lo, hi) for _ in range(n)] for _ in range(n)]
             for name, func in engines:
-                c, _m, t = self._engine_summary(func, M_crop, P)
+                c, _m, t = self._engine_summary(func, M_rand, P)
                 comps_series[name].append(c)
                 time_series[name].append(t)
 
         win = tk.Toplevel(self.root)
-        win.title("Growth Chart: Comparisons & Execution Time (Current Input)")
-        win.geometry("1100x800")
+        win.title("Growth Chart: Comparisons & Execution Time vs Matrix Size")
+        win.geometry("1100x820")
         win.configure(bg="#0f1117")
 
         header = tk.Label(
             win,
-            text="Growth Chart (current input): comparisons & runtime vs cropped matrix size",
+            text="Growth Chart: independent random N×N matrices, fixed pattern from input",
             bg="#0f1117", fg="#e0e0e0", font=("Segoe UI", 12, "bold")
         )
-        header.pack(pady=(10, 5))
+        header.pack(pady=(10, 2))
+
+        subheader = tk.Label(
+            win,
+            text="Note: each engine's 'comparison' unit differs — time chart is the fair cross-algorithm view",
+            bg="#0f1117", fg="#f59e0b", font=("Segoe UI", 9)
+        )
+        subheader.pack(pady=(0, 4))
 
         fig1 = Figure(figsize=(10, 3.6), dpi=100)
         ax1 = fig1.add_subplot(111)
         for name, _ in engines:
             ax1.plot(sizes, comps_series[name], marker="o", label=name)
-        ax1.set_title("Comparisons vs Cropped Matrix Size (N×N)")
-        ax1.set_xlabel("Cropped matrix size N")
-        ax1.set_ylabel("Comparisons")
+        ax1.set_title("Comparisons vs Matrix Size (N×N)  [units differ per engine — see note above]")
+        ax1.set_xlabel("Matrix size N  (independent random matrix per point)")
+        ax1.set_ylabel("Comparisons (engine-defined)")
         ax1.grid(True, alpha=0.3)
         ax1.legend(loc="upper left", ncols=4, fontsize=8)
 
@@ -224,9 +291,9 @@ class PatternMatcherApp:
         ax2 = fig2.add_subplot(111)
         for name, _ in engines:
             ax2.plot(sizes, time_series[name], marker="o", label=name)
-        ax2.set_title("Execution Time vs Cropped Matrix Size (N×N)")
-        ax2.set_xlabel("Cropped matrix size N")
-        ax2.set_ylabel("Time (ms)")
+        ax2.set_title("Execution Time vs Matrix Size (N×N)  [same unit — fair comparison]")
+        ax2.set_xlabel("Matrix size N  (independent random matrix per point)")
+        ax2.set_ylabel("Time (ms, averaged over runs)")
         ax2.grid(True, alpha=0.3)
         ax2.legend(loc="upper left", ncols=4, fontsize=8)
 
@@ -236,7 +303,8 @@ class PatternMatcherApp:
 
         note = tk.Label(
             win,
-            text=f"Pattern size used: {pr}×{pc}   |   Trials per size: 1   |   Input source: current matrix crop",
+            text=(f"Pattern: {pr}×{pc}   |   Matrix values: {lo}–{hi}   |   "
+                  f"Sizes: {sizes[0]}–{sizes[-1]}   |   Seed: 42 (reproducible)"),
             bg="#0f1117", fg="#9ca3af", font=("Segoe UI", 9)
         )
         note.pack(pady=(0, 10))
