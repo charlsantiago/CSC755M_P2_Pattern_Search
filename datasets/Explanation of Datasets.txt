@@ -1,0 +1,74 @@
+● All 14 files created. Here's the complete explanation of each:
+
+  ---
+  Best-Case Datasets — datasets/
+
+  Each engine has {engine}_best_matrix.txt + {engine}_best_pattern.txt (paste each into the respective input box).
+
+  ---
+  Naive — naive_best_*
+
+  Matrix: cyclic 1–5 (no 9s) | Pattern: P[0][0] = 9
+
+  Every window exits after 1 comparison — P[0][0]=9 never appears in the matrix so the inner loop always breaks on the first
+  cell.
+  - Actual: 169 comps vs worst-case 1521 → 9× fewer (= 1/PR×PC)
+
+  ---
+  Rabin-Karp — rk_best_*
+
+  Matrix: all 1s | Pattern: all 9s
+
+  The hash of any all-1s window never equals the hash of the all-9s pattern, so the cell-by-cell verification step is never
+  triggered. Every window costs exactly 1 hash comparison.
+  - Actual: 169 comps (all hash, zero verify)
+
+  ---
+  KMP — kmp_best_*
+
+  Matrix: cyclic 1–5 | Pattern: P[0] = [9,1,1,...]
+
+  P[0][0]=9 never appears in any text row, so KMP's matched-length counter j stays at 0 throughout every row scan — no
+  failure-function fallbacks, zero candidates, zero vertical verification.
+  - Actual: 197 comps (≈ NR×NC horizontal scan only)
+
+  ---
+  Boyer-Moore — bm_best_*
+
+  Matrix: all 9s | Pattern: P[0] = [1,2,3,4,5] (PC=5, 9 not in P[0])
+
+  BM scans right-to-left: the rightmost check sees text=9, pattern=5, mismatch. Since 9 is not in bad_char, shift = max(1,
+  (PC−1)−(−1)) = PC = 5. This is the maximum possible skip — jumps the full pattern width every time.
+  - Windows checked per row: 3 (j=0,5,10) instead of 11 → ~3.5× fewer windows
+  - Actual: 39 comps vs worst-case 2145 → 55× fewer ← most dramatic of all 7
+
+  ---
+  Aho-Corasick — aho_best_*
+
+  Matrix: cyclic 6–9 | Pattern: values from 1–5
+
+  The AC automaton's root only has outgoing transitions on symbols {1,2,3,4,5}. Every text character is from {6,7,8,9}, so the
+  automaton never leaves the root state — 1 comparison per cell. The hits table stays empty; the alignment phase trivially
+  finds nothing.
+  - Actual: 403 comps ≈ NR×NC scan + alignment overhead
+
+  ---
+  Bird-Baker — bb_best_*
+
+  Matrix: cyclic 6–9 | Pattern: values from 1–5 (same as AC)
+
+  - Phase 1 (AC horizontal): automaton stays at root → token_grid is all zeros.
+  - Phase 2 (KMP vertical): every column stream is all zeros; tok_seq has non-zero tokens → KMP j stays at 0, no match ever
+  found.
+  - Actual: 600 comps (AC scan + KMP vertical scan, both at minimum work)
+
+  ---
+  KMP-Naive — kmp_nv_best_*
+
+  Matrix: cyclic 1–5 | Pattern: all rows [7,7,7] (1 unique row, 7 not in matrix)
+
+  Only 1 unique KMP automaton is built. During horizontal scan, 7 never appears so j stays at 0 throughout — row_hits is empty
+  for all rows. Every candidate window fails the alignment lookup on the first row check (1 comparison each).
+  - Actual: 396 comps = 1 KMP automaton × NR×NC scan + NR_valid×NC_valid alignment checks
+
+✻ Sautéed for 6m 2s
