@@ -17,7 +17,7 @@ from engines import engine_naive, engine_rk, engine_kmp, engine_bm, engine_aho, 
 class PatternMatcherApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("2D Pattern Matcher Studio - Pro Edition")
+        self.root.title("CSC755M - Project 2 - 2D Pattern Matcher")
         self.root.geometry("1600x950")
         self.root.configure(bg="#0f1117")
 
@@ -53,7 +53,21 @@ class PatternMatcherApp:
         tk.Label(self.sidebar, text="🎁 LOAD PRESETS").pack(anchor="w")
         self.preset_var = tk.StringVar()
         self.preset_combo = ttk.Combobox(self.sidebar, textvariable=self.preset_var, state="readonly")
-        self.preset_combo['values'] = ("5x5 Simple", "12x12 Random Int", "8x8 Binary (0/1)", "Pattern Not Found")
+        self.preset_combo['values'] = (
+                "5x5 Simple",
+                "12x12 Random Int",
+                "8x8 Binary (0/1)",
+                "Pattern Not Found",
+                "Naive Friendly",
+                "RK Friendly",
+                "KMP Friendly",
+                "BM Friendly",
+                "AHO Friendly",
+                "KMP+Naive Friendly",
+                "Bird-Baker Friendly",
+                "Worst Case Many Matches"
+                )
+        
         self.preset_combo.pack(fill="x", pady=(5, 15))
         self.preset_combo.bind("<<ComboboxSelected>>", lambda e: self.load_preset(self.preset_var.get()))
 
@@ -395,19 +409,182 @@ class PatternMatcherApp:
         self.matrix_input.delete("1.0", tk.END)
         self.pattern_input.delete("1.0", tk.END)
         if name == "5x5 Simple":
-            self.matrix_input.insert("1.0", "1 2 3 4 5\n6 7 8 2 3\n9 1 2 7 8\n3 2 3 1 2\n5 7 8 4 5")
-            self.pattern_input.insert("1.0", "2 3\n7 8")
+            self.matrix_input.insert("1.0",
+                "1 2 3 4 5\n"
+                "6 7 8 2 3\n"
+                "9 1 2 7 8\n"
+                "3 2 3 1 2\n"
+                "5 7 8 4 5")
+            self.pattern_input.insert("1.0",
+                "2 3\n"
+                "7 8")
+
         elif name == "12x12 Random Int":
             rows = [" ".join(str(random.randint(1, 9)) for _ in range(12)) for _ in range(12)]
             self.matrix_input.insert("1.0", "\n".join(rows))
-            self.pattern_input.insert("1.0", "5 5\n5 5")
+            self.pattern_input.insert("1.0",
+                "5 5\n"
+                "5 5")
+
         elif name == "8x8 Binary (0/1)":
             rows = [" ".join(str(random.randint(0, 1)) for _ in range(8)) for _ in range(8)]
             self.matrix_input.insert("1.0", "\n".join(rows))
-            self.pattern_input.insert("1.0", "1 1\n1 1")
+            self.pattern_input.insert("1.0",
+                "1 1\n"
+                "1 1")
+
         elif name == "Pattern Not Found":
-            self.matrix_input.insert("1.0", "1 2 3\n4 5 6")
-            self.pattern_input.insert("1.0", "9 9")
+            self.matrix_input.insert("1.0",
+                "1 2 3\n"
+                "4 5 6")
+            self.pattern_input.insert("1.0",
+                "9 9")
+
+        elif name == "Naive Friendly":
+            self.matrix_input.insert("1.0",
+                "1 2 3 4 5\n"
+                "6 7 8 9 1\n"
+                "2 3 4 5 6\n"
+                "7 8 9 1 2\n"
+                "3 4 5 6 7")
+            self.pattern_input.insert("1.0",
+                "8 9\n"
+                "3 4")
+
+        elif name == "BM Friendly":
+            self.matrix_input.insert("1.0",
+                "10 11 12 13 14 15 16\n"
+                "21 22 23 24 25 26 27\n"
+                "31 32 33 34 35 36 37\n"
+                "41 42 43 44 45 46 47\n"
+                "51 52 53 54 55 56 57")
+            self.pattern_input.insert("1.0",
+                "24 25 26\n"
+                "34 35 36")
+
+        elif name == "RK Friendly":
+            # Best for Rabin-Karp:
+            # - mostly random values
+            # - one true match
+            # - almost all windows rejected by hash before cell verification
+            self.matrix_input.insert("1.0",
+                "8 3 7 1 9 4 6 2 5 7\n"
+                "2 6 4 8 1 5 9 3 7 4\n"
+                "9 1 5 3 7 2 8 6 4 1\n"
+                "4 8 2 6 5 9 3 7 1 8\n"
+                "7 5 9 4 6 1 2 8 3 5\n"
+                "3 7 1 9 2 8 4 5 6 7\n"
+                "6 2 8 5 3 7 1 4 9 2\n"
+                "1 4 3 7 8 6 5 9 2 3\n"
+                "5 9 6 2 4 3 7 1 8 6\n"
+                "7 1 4 8 9 5 6 2 3 4")
+            self.pattern_input.insert("1.0",
+                "6 1 2\n"
+                "8 4 5\n"
+                "7 1 4")
+
+        elif name == "KMP Friendly":
+            # Best for your kmp.py:
+            # - first row has strong prefix/suffix repetition
+            # - KMP gains from LPS skipping
+            # - lower rows verify only when first row hits
+            self.matrix_input.insert("1.0",
+                "1 2 1 2 1 2 1 2 1 2 1 3\n"
+                "5 6 5 6 5 6 5 6 5 6 5 7\n"
+                "9 8 9 8 9 8 9 8 9 8 9 4\n"
+                "1 2 1 2 1 2 1 2 1 2 1 3\n"
+                "5 6 5 6 5 6 5 6 5 6 5 7\n"
+                "9 8 9 8 9 8 9 8 9 8 9 4")
+            self.pattern_input.insert("1.0",
+                "1 2 1 2 1 2 1 3\n"
+                "5 6 5 6 5 6 5 7\n"
+                "9 8 9 8 9 8 9 4")
+
+        elif name == "AHO Friendly":
+            # Best for your aho_corasick.py:
+            # - multiple DISTINCT pattern rows
+            # - those rows appear many times in the text
+            # - AC can detect all row patterns in one pass per row
+            self.matrix_input.insert("1.0",
+                "1 2 3 4 9 9 9 9 1 2 3 4\n"
+                "5 6 7 8 8 8 8 8 5 6 7 8\n"
+                "9 1 2 3 7 7 7 7 9 1 2 3\n"
+                "1 2 3 4 6 6 6 6 1 2 3 4\n"
+                "5 6 7 8 5 5 5 5 5 6 7 8\n"
+                "9 1 2 3 4 4 4 4 9 1 2 3\n"
+                "1 2 3 4 3 3 3 3 1 2 3 4\n"
+                "5 6 7 8 2 2 2 2 5 6 7 8")
+            self.pattern_input.insert("1.0",
+                "1 2 3 4\n"
+                "5 6 7 8\n"
+                "9 1 2 3")
+
+        elif name == "KMP+Naive Friendly":
+            # Best for your kmp_naive.py:
+            # - pattern has FEW UNIQUE ROWS
+            # - repeated rows benefit because each unique row is KMP-built once
+            # - vertical alignment then confirms the match
+            self.matrix_input.insert("1.0",
+                "1 1 2 2 1 1 2 2 1 1 2 2\n"
+                "3 3 4 4 3 3 4 4 3 3 4 4\n"
+                "1 1 2 2 1 1 2 2 1 1 2 2\n"
+                "3 3 4 4 3 3 4 4 3 3 4 4\n"
+                "1 1 2 2 1 1 2 2 1 1 2 2\n"
+                "3 3 4 4 3 3 4 4 3 3 4 4\n"
+                "1 1 2 2 1 1 2 2 1 1 2 2\n"
+                "3 3 4 4 3 3 4 4 3 3 4 4")
+            self.pattern_input.insert("1.0",
+                "1 1 2 2\n"
+                "3 3 4 4\n"
+                "1 1 2 2\n"
+                "3 3 4 4")
+
+        elif name == "Bird-Baker Friendly":
+            # Best for your bird_baker.py:
+            # - only a few UNIQUE rows
+            # - repeated row sequence
+            # - token stream becomes something like 1,2,1,2,...
+            # - KMP on token columns benefits strongly
+            self.matrix_input.insert("1.0",
+                "4 4 4 4 4 4 4 4 4 4\n"
+                "7 7 7 7 7 7 7 7 7 7\n"
+                "4 4 4 4 4 4 4 4 4 4\n"
+                "7 7 7 7 7 7 7 7 7 7\n"
+                "4 4 4 4 4 4 4 4 4 4\n"
+                "7 7 7 7 7 7 7 7 7 7\n"
+                "4 4 4 4 4 4 4 4 4 4\n"
+                "7 7 7 7 7 7 7 7 7 7")
+            self.pattern_input.insert("1.0",
+                "4 4 4\n"
+                "7 7 7\n"
+                "4 4 4\n"
+                "7 7 7")
+
+        elif name == "Worst Case Many Matches":
+            self.matrix_input.insert("1.0",
+                "1 1 1 1 1 1\n"
+                "1 1 1 1 1 1\n"
+                "1 1 1 1 1 1\n"
+                "1 1 1 1 1 1\n"
+                "1 1 1 1 1 1")
+            self.pattern_input.insert("1.0",
+                "1 1 1\n"
+                "1 1 1")
+
+        # if name == "5x5 Simple":
+        #     self.matrix_input.insert("1.0", "1 2 3 4 5\n6 7 8 2 3\n9 1 2 7 8\n3 2 3 1 2\n5 7 8 4 5")
+        #     self.pattern_input.insert("1.0", "2 3\n7 8")
+        # elif name == "12x12 Random Int":
+        #     rows = [" ".join(str(random.randint(1, 9)) for _ in range(12)) for _ in range(12)]
+        #     self.matrix_input.insert("1.0", "\n".join(rows))
+        #     self.pattern_input.insert("1.0", "5 5\n5 5")
+        # elif name == "8x8 Binary (0/1)":
+        #     rows = [" ".join(str(random.randint(0, 1)) for _ in range(8)) for _ in range(8)]
+        #     self.matrix_input.insert("1.0", "\n".join(rows))
+        #     self.pattern_input.insert("1.0", "1 1\n1 1")
+        # elif name == "Pattern Not Found":
+        #     self.matrix_input.insert("1.0", "1 2 3\n4 5 6")
+        #     self.pattern_input.insert("1.0", "9 9")
 
     def prepare_run(self):
         try:

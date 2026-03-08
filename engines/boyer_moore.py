@@ -21,76 +21,175 @@ Complexity
 Preprocessing : O(PC + alphabet_size)
 Search        : O(NR * NC / PC) best-case, O(NR * NC * PC) worst-case
 """
+def build_bad_char(pattern):
+    bad = {}
+    for i, v in enumerate(pattern):
+        bad[v] = i
+    return bad
+
+
+def build_good_suffix(pattern):
+    m = len(pattern)
+    shift = [0] * (m + 1)
+    border = [0] * (m + 1)
+
+    i = m
+    j = m + 1
+    border[i] = j
+
+    while i > 0:
+        while j <= m and pattern[i - 1] != pattern[j - 1 if j - 1 < m else 0]:
+            if shift[j] == 0:
+                shift[j] = j - i
+            j = border[j]
+        i -= 1
+        j -= 1
+        border[i] = j
+
+    j = border[0]
+    for i in range(m + 1):
+        if shift[i] == 0:
+            shift[i] = j
+        if i == j:
+            j = border[j]
+
+    return shift
 
 
 def engine_bm(M, P):
-    """
-    Boyer-Moore bad-character on first pattern row + naive vertical verify.
+    steps = []
+    comps = 0
+    matches = 0
 
-    Parameters
-    ----------
-    M : list[list[int]]  — text matrix  (NR × NC)
-    P : list[list[int]]  — pattern       (PR × PC)
+    NR, NC = len(M), len(M[0])
+    PR, PC = len(P), len(P[0])
 
-    Returns
-    -------
-    steps : list[dict]
-        Each dict: 'pos', 'ok', 'cells', 'm', 'c'  (see naive.py for schema)
-    """
-    steps, comps, matches = [], 0, 0
-
-    if not M or not P or not M[0] or not P[0]:
-        return steps
-    NR, NC, PR, PC = len(M), len(M[0]), len(P), len(P[0])
-    if PR > NR or PC > NC:
-        return steps
-
-    # --- Bad-character table: maps each symbol to its last position in P[0] ---
-    # If a symbol is not in P[0] we treat its last position as -1 (not found).
-    bad_char = {val: k for k, val in enumerate(P[0])}
-    # Note: iterating left-to-right overwrites earlier positions, leaving the
-    # rightmost occurrence for each symbol — exactly what bad-character needs.
+    bad = build_bad_char(P[0])
+    good = build_good_suffix(P[0])
 
     for i in range(NR - PR + 1):
-        j = 0   # current window start column
+
+        j = 0
         while j <= NC - PC:
-            # Scan P[0] right-to-left against M[i][j..j+PC-1]
+
             k = PC - 1
             cells = []
+
             while k >= 0:
                 comps += 1
-                ok_cell = (P[0][k] == M[i][j + k])
-                cells.append((i, j + k, ok_cell))
-                if not ok_cell:
-                    # Bad-character shift: align P[0]'s last occurrence of the
-                    # mismatching text character with position k, but shift at
-                    # least 1 to guarantee progress.
-                    shift = max(1, k - bad_char.get(M[i][j + k], -1))
-                    steps.append({'pos': (i, j), 'ok': False, 'cells': cells, 'm': matches, 'c': comps})
+                ok = P[0][k] == M[i][j + k]
+                cells.append((i, j + k, ok))
+
+                if not ok:
+                    bc_shift = k - bad.get(M[i][j + k], -1)
+                    gs_shift = good[k + 1]
+                    shift = max(1, bc_shift, gs_shift)
+
+                    steps.append({'pos': (i, j), 'ok': False,
+                                  'cells': cells, 'm': matches, 'c': comps})
+
                     j += shift
                     break
+
                 k -= 1
+
             else:
-                # P[0] fully matched at (i, j) — verify remaining rows naively
-                is_match = True
-                cells = []
+                ok = True
+
                 for pj in range(PC):
-                    cells.append((i, j + pj, True))   # row-0 is already confirmed
+                    cells.append((i, j + pj, True))
 
                 for pi in range(1, PR):
                     for pj in range(PC):
                         comps += 1
-                        ok_cell = (M[i + pi][j + pj] == P[pi][pj])
-                        cells.append((i + pi, j + pj, ok_cell))
-                        if not ok_cell:
-                            is_match = False
+                        match = M[i + pi][j + pj] == P[pi][pj]
+                        cells.append((i + pi, j + pj, match))
+                        if not match:
+                            ok = False
                             break
-                    if not is_match:
+                    if not ok:
                         break
 
-                if is_match:
+                if ok:
                     matches += 1
-                steps.append({'pos': (i, j), 'ok': is_match, 'cells': cells, 'm': matches, 'c': comps})
-                j += 1  # after a full match, advance by 1 (good-suffix not implemented here)
+
+                steps.append({'pos': (i, j), 'ok': ok,
+                              'cells': cells, 'm': matches, 'c': comps})
+
+                j += good[0]
 
     return steps
+
+# def engine_bm(M, P):
+#     """
+#     Boyer-Moore bad-character on first pattern row + naive vertical verify.
+
+#     Parameters
+#     ----------
+#     M : list[list[int]]  — text matrix  (NR × NC)
+#     P : list[list[int]]  — pattern       (PR × PC)
+
+#     Returns
+#     -------
+#     steps : list[dict]
+#         Each dict: 'pos', 'ok', 'cells', 'm', 'c'  (see naive.py for schema)
+#     """
+#     steps, comps, matches = [], 0, 0
+
+#     if not M or not P or not M[0] or not P[0]:
+#         return steps
+#     NR, NC, PR, PC = len(M), len(M[0]), len(P), len(P[0])
+#     if PR > NR or PC > NC:
+#         return steps
+
+#     # --- Bad-character table: maps each symbol to its last position in P[0] ---
+#     # If a symbol is not in P[0] we treat its last position as -1 (not found).
+#     bad_char = {val: k for k, val in enumerate(P[0])}
+#     # Note: iterating left-to-right overwrites earlier positions, leaving the
+#     # rightmost occurrence for each symbol — exactly what bad-character needs.
+
+#     for i in range(NR - PR + 1):
+#         j = 0   # current window start column
+#         while j <= NC - PC:
+#             # Scan P[0] right-to-left against M[i][j..j+PC-1]
+#             k = PC - 1
+#             cells = []
+#             while k >= 0:
+#                 comps += 1
+#                 ok_cell = (P[0][k] == M[i][j + k])
+#                 cells.append((i, j + k, ok_cell))
+#                 if not ok_cell:
+#                     # Bad-character shift: align P[0]'s last occurrence of the
+#                     # mismatching text character with position k, but shift at
+#                     # least 1 to guarantee progress.
+#                     shift = max(1, k - bad_char.get(M[i][j + k], -1))
+#                     steps.append({'pos': (i, j), 'ok': False, 
+#                                   'cells': cells, 'm': matches, 'c': comps})
+#                     j += shift
+#                     break
+#                 k -= 1
+#             else:
+#                 # P[0] fully matched at (i, j) — verify remaining rows naively
+#                 is_match = True
+#                 cells = []
+#                 for pj in range(PC):
+#                     cells.append((i, j + pj, True))   # row-0 is already confirmed
+
+#                 for pi in range(1, PR):
+#                     for pj in range(PC):
+#                         comps += 1
+#                         ok_cell = (M[i + pi][j + pj] == P[pi][pj])
+#                         cells.append((i + pi, j + pj, ok_cell))
+#                         if not ok_cell:
+#                             is_match = False
+#                             break
+#                     if not is_match:
+#                         break
+
+#                 if is_match:
+#                     matches += 1
+#                 steps.append({'pos': (i, j), 'ok': is_match, 
+#                               'cells': cells, 'm': matches, 'c': comps})
+#                 j += 1  # after a full match, advance by 1
+
+#     return steps
